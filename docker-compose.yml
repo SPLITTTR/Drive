@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: drive_postgres
+    environment:
+      POSTGRES_DB: drive
+      POSTGRES_USER: drive
+      POSTGRES_PASSWORD: drive
+    ports:
+      - "5432:5432"
+    volumes:
+      - drive_pg_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: drive_minio
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - drive_minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: drive_minio_init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set local http://minio:9000 minio minio12345) do echo 'waiting for minio' && sleep 2; done;
+      /usr/bin/mc mb -p local/drive-bucket || true;
+      echo 'minio bucket ready';
+      "
+    restart: "no"
+
+volumes:
+  drive_pg_data:
+  drive_minio_data:
