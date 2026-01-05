@@ -29,35 +29,7 @@ Verify:
 
 A bucket named **drive-bucket** is created automatically.
 
-## Step 2 — Create a Clerk app and env vars
-
-Follow Clerk’s Next.js App Router quickstart (create an app and copy the keys).
-
-### 2.1 Frontend env
-
-Create `frontend/.env.local`:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-```
-
-### 2.2 Backend JWT verification key (Clerk PEM public key)
-
-This starter verifies Clerk session tokens as JWTs using Quarkus SmallRye JWT.
-Clerk’s docs explain that session tokens are JWTs verifiable via your instance’s public key, and show `iss` examples like `https://<instance>.clerk.accounts.dev`.
-
-Create a file in the **project root** named:
-
-`clerk_public_key.pem`
-
-Paste the PEM public key in it (including the BEGIN/END lines).
-
-Optional hardening later:
-- set `mp.jwt.verify.issuer` (see `backend/src/main/resources/application.properties`).
-
-## Step 3 — Run the backend (Quarkus)
+## Step 2 — Run the backend (Quarkus)
 
 Open a terminal in `backend/`:
 
@@ -70,7 +42,7 @@ Backend runs at:
 - API: `http://localhost:8080`
 - Swagger UI: `http://localhost:8080/q/swagger-ui`
 
-## Step 4 — Run the frontend (Next.js)
+## Step 3 — Run the frontend (Next.js)
 
 Open a second terminal in `frontend/`:
 
@@ -102,11 +74,3 @@ Clerk recommends using `getToken()` and setting `Authorization: Bearer ...` for 
 - `GET /v1/shared` — list items shared with you (shared roots)
 - `DELETE /v1/items/{id}` — delete (hard delete; folders recurse)
 
-## Design note: why Postgres only (no Mongo)
-
-For a Drive-like model (nested folders + inherited access + consistent authorization checks),
-PostgreSQL is the simplest option because you can do recursive queries and keep referential integrity.
-MongoDB can work, but “who can access what?” becomes more complex without joins / strong constraints.
-
----
-If you want, tell me what you want next (trash, starred, link sharing, per-folder sharing, etc.) and I’ll extend it.
