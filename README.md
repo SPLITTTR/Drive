@@ -37,6 +37,11 @@ Open a terminal in `backend/`:
 cd backend
 ./mvnw.cmd quarkus:dev
 ```
+or 
+```bash
+cd backend
+quarkus dev
+```
 
 Backend runs at:
 - API: `http://localhost:8080`
