@@ -42,6 +42,44 @@ public class AuthService {
     MeResponse r = new MeResponse();
     r.userId = u.id;
     r.clerkUserId = u.clerkUserId;
+    r.username = u.username;
     return r;
   }
+
+  @Transactional
+  public MeResponse setUsername(String username) {
+    AppUser u = upsertCurrentUser();
+
+    if (username == null) {
+      throw new jakarta.ws.rs.BadRequestException("username required");
+    }
+    username = username.trim();
+    if (username.isBlank()) {
+      throw new jakarta.ws.rs.BadRequestException("username required");
+    }
+
+    username = username.toLowerCase();
+
+    if (username.length() < 4 || username.length() > 64) {
+      throw new jakarta.ws.rs.BadRequestException("username must be 4-64 characters");
+    }
+    if (!username.matches("[a-z0-9_]+")) {
+      throw new jakarta.ws.rs.BadRequestException("username may contain only a-z, 0-9 and underscore");
+    }
+
+    AppUser other = users.findByUsername(username);
+    if (other != null && !other.id.equals(u.id)) {
+      throw new jakarta.ws.rs.WebApplicationException("username already taken", 409);
+    }
+
+    u.username = username;
+    users.persist(u);
+
+    MeResponse r = new MeResponse();
+    r.userId = u.id;
+    r.clerkUserId = u.clerkUserId;
+    r.username = u.username;
+    return r;
+  }
+
 }

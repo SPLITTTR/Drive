@@ -16,6 +16,9 @@ public class AppUser extends PanacheEntityBase {
   @Column(name = "clerk_user_id", nullable = false, unique = true)
   public String clerkUserId;
 
+  @Column(name = "username", unique = true)
+  public String username;
+
   @Column(name = "created_at", nullable = false)
   public Instant createdAt;
 }

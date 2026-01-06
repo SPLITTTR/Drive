@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useUser } from '@clerk/nextjs';
 import { useAuthedFetch, ItemDto } from './api';
 
 type Tab = 'MY_DRIVE' | 'SHARED';
@@ -15,6 +16,7 @@ function isImage(it: ItemDto): boolean {
 
 export default function Drive() {
   const authedFetch = useAuthedFetch();
+  const { user, isLoaded, isSignedIn } = useUser();
 
   const [tab, setTab] = useState<Tab>('MY_DRIVE');
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
@@ -25,6 +27,7 @@ export default function Drive() {
   const [sharedRoots, setSharedRoots] = useState<ItemDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [myClerkId, setMyClerkId] = useState<string | null>(null);
+  const [myUsername, setMyUsername] = useState<string | null>(null);
 
   const [newFolderName, setNewFolderName] = useState('New folder');
 
@@ -61,8 +64,30 @@ export default function Drive() {
   }
 
   async function loadMe() {
-    const data = (await authedFetch('/v1/me')) as { userId: string; clerkUserId: string };
+    const data = (await authedFetch('/v1/me')) as { userId: string; clerkUserId: string; username?: string | null };
     setMyClerkId(data?.clerkUserId || null);
+
+    if (data?.username) {
+      setMyUsername(data.username);
+      return;
+    }
+
+    const clerkUsername = user?.username;
+    if (clerkUsername) {
+      try {
+        const updated = (await authedFetch('/v1/me/username', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: clerkUsername }),
+        })) as { username?: string };
+        setMyUsername(updated?.username || clerkUsername);
+      } catch {
+        // If username already taken in our DB (should not happen if Clerk enforces uniqueness), keep null.
+        setMyUsername(null);
+      }
+    } else {
+      setMyUsername(null);
+    }
   }
 
   useEffect(() => {
@@ -71,8 +96,12 @@ export default function Drive() {
 
   useEffect(() => {
     loadShared().catch(() => {});
-    loadMe().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    loadMe().catch(() => {});
+  }, [isLoaded, isSignedIn, user?.username]);
 
   // Build thumbnails for images in current view.
   useEffect(() => {
@@ -177,13 +206,13 @@ async function createFolder() {
   }
 
   async function shareRoot(id: string) {
-    const target = prompt('Target Clerk user id (e.g. user_...)?');
+    const target = prompt('Target username (as chosen in Clerk sign-up)?');
     if (!target) return;
     const role = (prompt('Role: VIEWER or EDITOR?', 'VIEWER') || 'VIEWER').toUpperCase();
     await authedFetch(`/v1/items/${id}/share`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetClerkUserId: target, role }),
+      body: JSON.stringify({ targetUsername: target, role }),
     });
     alert('Shared.');
   }

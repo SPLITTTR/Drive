@@ -5,4 +5,5 @@ import java.util.UUID;
 public class MeResponse {
   public UUID userId;
   public String clerkUserId;
+  public String username;
 }

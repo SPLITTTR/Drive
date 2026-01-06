@@ -28,6 +28,15 @@ public class DriveResource {
     return auth.me();
   }
 
+
+  @PUT
+  @Path("/me/username")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public MeResponse setUsername(SetUsernameRequest req) {
+    if (req == null) throw new BadRequestException("body required");
+    return auth.setUsername(req.username);
+  }
+
   @GET
   @Path("/root/children")
   public List<ItemDto> rootChildren() {
@@ -87,7 +96,7 @@ public class DriveResource {
   @Consumes(MediaType.APPLICATION_JSON)
   public Response share(@PathParam("id") UUID id, ShareRequest req) {
     UUID userId = auth.upsertCurrentUser().id;
-    items.shareRoot(userId, id, req.targetClerkUserId, req.role);
+    items.shareRoot(userId, id, req.targetUsername, req.targetClerkUserId, req.role);
     return Response.noContent().build();
   }
 

@@ -257,30 +257,47 @@ public class ItemService {
   }
 
   @Transactional
-  public void shareRoot(UUID ownerUserId, UUID itemId, String targetClerkUserId, ShareRole role) {
-    if (targetClerkUserId == null || targetClerkUserId.isBlank()) throw new BadRequestException("targetClerkUserId required");
+  public void shareRoot(UUID ownerUserId, UUID itemId, String targetUsername, String targetClerkUserId, ShareRole role) {
+    if ((targetUsername == null || targetUsername.isBlank()) && (targetClerkUserId == null || targetClerkUserId.isBlank())) {
+      throw new BadRequestException("targetUsername or targetClerkUserId required");
+    }
     if (role == null) role = ShareRole.VIEWER;
 
-    Item it = items.findById(itemId);
-    if (it == null) throw new NotFoundException();
-    if (!it.ownerUserId.equals(ownerUserId)) throw new ForbiddenException("Only owner can share in this MVP");
-
-    if (it.parentId != null) throw new BadRequestException("Only root items can be shared");
-
-    AppUser target = users.findByClerkUserId(targetClerkUserId);
-    if (target == null) {
-      target = new AppUser();
-      target.id = UUID.randomUUID();
-      target.clerkUserId = targetClerkUserId;
-      target.createdAt = Instant.now();
-      users.persist(target);
+    // Resolve target user (preferred: username; fallback: clerk user id)
+    AppUser target;
+    if (targetUsername != null && !targetUsername.isBlank()) {
+      String normalized = targetUsername.trim().toLowerCase();
+      target = users.findByUsername(normalized);
+      if (target == null) throw new NotFoundException("No user with that username (user must sign in at least once)");
+    } else {
+      String clerkId = targetClerkUserId.trim();
+      target = users.findByClerkUserId(clerkId);
+      if (target == null) {
+        // Allow sharing to a Clerk user id that hasn't signed in yet (creates a placeholder user row).
+        target = new AppUser();
+        target.id = UUID.randomUUID();
+        target.clerkUserId = clerkId;
+        target.createdAt = Instant.now();
+        users.persist(target);
+      }
     }
 
-    ItemShare s = new ItemShare();
-    s.id = new ItemShareId(itemId, target.id);
-    s.role = role;
-    s.createdAt = Instant.now();
-    shares.persist(s);
+    Item it = items.findById(itemId);
+    if (it == null) throw new NotFoundException("Item not found");
+    if (!it.ownerUserId.equals(ownerUserId)) throw new ForbiddenException("Only owner can share in this MVP");
+    if (it.parentId != null) throw new BadRequestException("Only root items can be shared");
+
+    // Upsert share
+    ItemShare existing = shares.findById(new ItemShareId(itemId, target.id));
+    if (existing == null) {
+      ItemShare s = new ItemShare();
+      s.id = new ItemShareId(itemId, target.id);
+      s.role = role;
+      s.createdAt = Instant.now();
+      shares.persist(s);
+    } else {
+      existing.role = role;
+    }
   }
 
   @Transactional
@@ -363,8 +380,11 @@ public void deleteItem(UUID userId, UUID itemId) {
     }
   }
 
-  public static class NotFoundException extends RuntimeException {}
-  public static class ForbiddenException extends RuntimeException {
+  public static class NotFoundException extends RuntimeException {
+    public NotFoundException() {}
+    public NotFoundException(String message) { super(message); }
+  }
+public static class ForbiddenException extends RuntimeException {
     public ForbiddenException(String msg) { super(msg); }
   }
   public static class BadRequestException extends RuntimeException {

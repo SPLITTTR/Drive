@@ -11,4 +11,8 @@ public class AppUserRepository implements PanacheRepositoryBase<AppUser, UUID> {
   public AppUser findByClerkUserId(String clerkUserId) {
     return find("clerkUserId", clerkUserId).firstResult();
   }
+
+  public AppUser findByUsername(String username) {
+    return find("username", username).firstResult();
+  }
 }
