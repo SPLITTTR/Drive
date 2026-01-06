@@ -33,13 +33,14 @@ public class ItemRepository implements PanacheRepositoryBase<Item, UUID> {
         ") " +
         "SELECT 1 FROM tree WHERE id = ?2 LIMIT 1";
 
-    Object res = getEntityManager()
-        .createNativeQuery(sql)
-        .setParameter(1, rootId)
-        .setParameter(2, possibleDescendantId)
-        .getResultStream()
-        .findFirst()
-        .orElse(null);
+    var q = getEntityManager()
+      .createNativeQuery(sql)
+      .setParameter(1, rootId)
+      .setParameter(2, possibleDescendantId)
+      .setMaxResults(1);
+
+    var list = q.getResultList();
+    Object res = list.isEmpty() ? null : list.get(0);
 
     return res != null;
   }

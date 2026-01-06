@@ -47,13 +47,14 @@ public class PermissionService {
         "ORDER BY CASE s.role WHEN 'EDITOR' THEN 2 WHEN 'VIEWER' THEN 1 ELSE 0 END DESC " +
         "LIMIT 1";
 
-    Object role = items.getEntityManager()
-        .createNativeQuery(sql)
-        .setParameter(1, itemId)
-        .setParameter(2, userId)
-        .getResultStream()
-        .findFirst()
-        .orElse(null);
+    var q = items.getEntityManager()
+      .createNativeQuery(sql)
+      .setParameter(1, itemId)
+      .setParameter(2, userId)
+      .setMaxResults(1);
+
+    var list = q.getResultList();
+    Object role = list.isEmpty() ? null : list.get(0);
 
     if (role == null) return Access.NONE;
     ShareRole r = ShareRole.valueOf(role.toString());

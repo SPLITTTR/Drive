@@ -7,7 +7,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import software.amazon.awssdk.awscore.presigner.PresignRequest;
+//import software.amazon.awssdk.awscore.presigner.PresignRequest;
 
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
