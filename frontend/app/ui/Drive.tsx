@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import { useAuthedFetch, ItemDto } from './api';
 
 type Tab = 'MY_DRIVE' | 'SHARED';
+type Crumb = { id: string | null; name: string };
 
 export default function Drive() {
   const authedFetch = useAuthedFetch();
 
   const [tab, setTab] = useState<Tab>('MY_DRIVE');
-  const [cwd, setCwd] = useState<string | null>(null); // null = root
+  const [path, setPath] = useState<Crumb[]>([{ id: null, name: 'Root' }]);
+  const cwd = path[path.length - 1].id; // null = root
   const [items, setItems] = useState<ItemDto[]>([]);
   const [sharedRoots, setSharedRoots] = useState<ItemDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -96,11 +98,44 @@ export default function Drive() {
     await loadMyDrive(cwd);
   }
 
+  function goRoot() {
+  setTab('MY_DRIVE');
+  setPath([{ id: null, name: 'Root' }]);
+  }
+
+  function goBack() {
+    setPath((p) => (p.length > 1 ? p.slice(0, -1) : p));
+  }
+
+  function jumpTo(index: number) {
+    setPath((p) => p.slice(0, index + 1));
+  }
+
+
   function openFolder(it: ItemDto) {
     if (it.type !== 'FOLDER') return;
-    setTab('MY_DRIVE');
-    setCwd(it.id);
+
+    if (tab !== 'MY_DRIVE') {
+      // coming from Shared tab: start a fresh breadcrumb
+      setTab('MY_DRIVE');
+      setPath([{ id: null, name: 'Root' }, { id: it.id, name: it.name }]);
+      return;
+    }
+
+    // normal navigation inside My Drive
+    setPath((p) => [...p, { id: it.id, name: it.name }]);
   }
+
+
+
+  // function goBack() {
+  // setCwdHistory((h) => {
+  //   if (h.length === 0) return h;
+  //   const prev = h[h.length - 1];
+  //   setCwd(prev);
+  //   return h.slice(0, -1);
+  //   });
+  // }
 
   async function downloadFile(it: ItemDto) {
   // Download via authenticated fetch (so the backend can stay protected).
@@ -134,18 +169,37 @@ export default function Drive() {
 
       {tab === 'MY_DRIVE' && (
         <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button onClick={() => setCwd(null)} disabled={cwd === null}>Root</button>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {path.map((c, idx) => {
+                const isLast = idx === path.length - 1;
+                return (
+                  <span key={String(c.id) + idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {isLast ? (
+                      <span style={{ fontWeight: 600 }}>{c.name}</span>
+                    ) : (
+                      <button type="button" onClick={() => jumpTo(idx)}>{c.name}</button>
+                    )}
+                    {!isLast && <span>/</span>}
+                  </span>
+                );
+              })}
+            </nav>
 
-            <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} style={{ padding: 6, minWidth: 220 }} />
-            <button onClick={createFolder}>Create folder</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button onClick={goBack} disabled={path.length <= 1}>Back</button>
+              <button onClick={goRoot} disabled={cwd === null}>Root</button>
 
-            <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-              <span>Upload:</span>
-              <input type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f).catch(err => alert(String(err))); }} />
-            </label>
+              <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} style={{ padding: 6, minWidth: 220 }} />
+              <button onClick={createFolder}>Create folder</button>
 
-            {loading && <span>Loading…</span>}
+              <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                <span>Upload:</span>
+                <input type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f).catch(err => alert(String(err))); }} />
+              </label>
+
+              {loading && <span>Loading…</span>}
+            </div>
           </div>
 
           <ItemTable items={items} onOpenFolder={openFolder} onDelete={deleteItem} onRename={renameItem} onShare={shareRoot} onDownload={downloadFile} />
