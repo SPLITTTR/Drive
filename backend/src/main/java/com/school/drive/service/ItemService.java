@@ -14,6 +14,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.persistence.EntityManager;
 
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -41,6 +42,8 @@ public class ItemService {
 
   @Inject S3Storage storage;
   @Inject S3Client s3;
+
+  @Inject EntityManager em;
 
   private static ItemDto toDto(Item it) {
     ItemDto d = new ItemDto();
@@ -236,25 +239,46 @@ public class ItemService {
     return roots;
   }
 
-  @Transactional
-  public void deleteItem(UUID userId, UUID itemId) {
-    Item it = items.findById(itemId);
-    if (it == null) return;
+@Transactional
+public void deleteItem(UUID userId, UUID itemId) {
+  Item it = items.findById(itemId);
+  if (it == null) return;
 
-    var access = perms.accessFor(userId, itemId);
-    if (!access.canWrite()) throw new ForbiddenException("Need EDITOR to delete");
+  var access = perms.accessFor(userId, itemId);
+  if (!access.canWrite()) throw new ForbiddenException("Need EDITOR to delete");
 
-    // delete S3 objects first (best-effort)
-    List<String> keys = items.listFileKeysInSubtree(itemId);
-    for (String k : keys) {
-      try {
-        s3.deleteObject(DeleteObjectRequest.builder().bucket(storage.bucket()).key(k).build());
-      } catch (Exception ignored) {}
-    }
-
-    // DB cascade removes subtree (parent_id has ON DELETE CASCADE)
-    items.deleteById(itemId);
+  // 1) Delete S3 objects first (best-effort) – keeps your existing logic
+  List<String> keys = items.listFileKeysInSubtree(itemId);
+  for (String k : keys) {
+    try {
+      s3.deleteObject(DeleteObjectRequest.builder().bucket(storage.bucket()).key(k).build());
+    } catch (Exception ignored) {}
   }
+
+  // 2) Delete DB rows bottom-up (children first, then parent)
+  final String sql =
+      "WITH RECURSIVE tree AS ( " +
+      "  SELECT id, 0 AS depth " +
+      "  FROM item " +
+      "  WHERE id = ?1 " +
+      "  UNION ALL " +
+      "  SELECT c.id, t.depth + 1 " +
+      "  FROM item c " +
+      "  JOIN tree t ON c.parent_id = t.id " +
+      ") " +
+      "SELECT id FROM tree ORDER BY depth DESC";
+
+  @SuppressWarnings("unchecked")
+  List<Object> rows = em.createNativeQuery(sql)
+      .setParameter(1, itemId)
+      .getResultList();
+
+  for (Object r : rows) {
+    UUID id = (r instanceof UUID) ? (UUID) r : UUID.fromString(r.toString());
+    items.deleteById(id);
+  }
+}
+
 
   @Transactional
   public List<ItemDto> searchByName(UUID userId, String q, int limit) {

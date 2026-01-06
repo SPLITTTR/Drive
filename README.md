@@ -5,14 +5,6 @@ This repo is a **working starter** for a Google Drive–style clone:
 - **Frontend:** Next.js (App Router) + Clerk authentication
 - **Backend:** Quarkus REST API + PostgreSQL metadata + MinIO (S3-compatible) object storage
 - **Sharing model:** **shared roots only** (you can access descendants through the root share)
-- **Duplicate names:** allowed (like Google Drive)
-
-## What you need installed (Windows)
-
-1. **Docker Desktop** (you already have it)
-2. **Node.js LTS** (includes npm)
-3. **Java JDK 21** (Temurin / Oracle)
-4. (Optional) **Git** and **VS Code**
 
 ## Step 1 — Start PostgreSQL + MinIO (S3)
 
