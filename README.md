@@ -50,24 +50,3 @@ npm run dev
 ```
 
 Frontend runs at `http://localhost:3000`.
-
-Sign in, then you can:
-- create folders
-- upload files
-- navigate folders
-- share an item (by Clerk user id)
-
-## API overview
-
-All endpoints are under `/v1` and require a valid Clerk session token (sent as Bearer).
-Clerk recommends using `getToken()` and setting `Authorization: Bearer ...` for cross-origin requests.
-
-- `GET /v1/root/children` — list your root items
-- `GET /v1/folders/{id}/children` — list folder items
-- `POST /v1/folders` — create folder
-- `POST /v1/files/upload` — upload file (multipart/form-data)
-- `GET /v1/files/{id}/download` — download file
-- `POST /v1/items/{id}/share` — share a **root** item with another user
-- `GET /v1/shared` — list items shared with you (shared roots)
-- `DELETE /v1/items/{id}` — delete (hard delete; folders recurse)
-
