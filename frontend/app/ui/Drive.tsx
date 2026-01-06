@@ -89,14 +89,45 @@ export default function Drive() {
     alert('Shared.');
   }
 
-  async function uploadFile(file: File) {
-    const fd = new FormData();
-    if (cwd) fd.set('parentId', cwd);
-    fd.set('file', file);
+  // async function uploadFile(file: File) {
+  //   const fd = new FormData();
+  //   if (cwd) fd.set('parentId', cwd);
+  //   fd.set('file', file);
 
-    await authedFetch('/v1/files/upload', { method: 'POST', body: fd });
+  //   await authedFetch('/v1/files/upload', { method: 'POST', body: fd });
+  //   await loadMyDrive(cwd);
+  // }
+
+  type PresignUploadResponse = {
+    item: ItemDto;
+    uploadUrl: string;
+    method: string;
+    contentType: string;
+  };
+
+  async function uploadFile(file: File) {
+    const presign = (await authedFetch('/v1/files/presign-upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        parentId: cwd,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+      }),
+    })) as PresignUploadResponse;
+
+    const putRes = await fetch(presign.uploadUrl, {
+      method: presign.method || 'PUT',
+      headers: { 'Content-Type': presign.contentType || file.type || 'application/octet-stream' },
+      body: file,
+    });
+
+    if (!putRes.ok) throw new Error(`Upload to storage failed (${putRes.status})`);
+
     await loadMyDrive(cwd);
   }
+
 
   function goRoot() {
   setTab('MY_DRIVE');

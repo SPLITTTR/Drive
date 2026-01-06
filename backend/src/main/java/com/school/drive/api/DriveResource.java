@@ -7,6 +7,8 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import software.amazon.awssdk.awscore.presigner.PresignRequest;
+
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -111,4 +113,14 @@ public class DriveResource {
     UUID userId = auth.upsertCurrentUser().id;
     return items.searchByName(userId, q, limit);
   }
+
+  @POST
+  @Path("/files/presign-upload")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public PresignUploadResponse presignUpload(PresignUploadRequest req) {
+    UUID userId = auth.upsertCurrentUser().id;
+    return items.presignUpload(userId, req.parentId, req.filename, req.mimeType, req.sizeBytes);
+  }
+
+
 }

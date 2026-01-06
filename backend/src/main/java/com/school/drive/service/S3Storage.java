@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 
@@ -64,5 +65,21 @@ public class S3Storage {
 
   public String bucket() {
     return bucket;
+  }
+
+  @Produces
+  @Singleton
+  public S3Presigner s3Presigner() {
+    var creds = AwsBasicCredentials.create(accessKey, secretKey);
+    var s3Config = S3Configuration.builder()
+        .pathStyleAccessEnabled(true)
+        .build();
+
+    return S3Presigner.builder()
+        .endpointOverride(endpoint)
+        .region(Region.of(region))
+        .credentialsProvider(StaticCredentialsProvider.create(creds))
+        .serviceConfiguration(s3Config)
+        .build();
   }
 }

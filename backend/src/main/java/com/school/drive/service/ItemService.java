@@ -25,6 +25,15 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import com.school.drive.api.dto.PresignUploadResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+
+import java.time.Duration;
+
+
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,6 +53,8 @@ public class ItemService {
   @Inject S3Client s3;
 
   @Inject EntityManager em;
+
+  @Inject S3Presigner presigner;
 
   private static ItemDto toDto(Item it) {
     ItemDto d = new ItemDto();
@@ -179,6 +190,53 @@ public class ItemService {
     s3.putObject(put, RequestBody.fromFile(fileUpload.uploadedFile().toFile()));
     return toDto(it);
   }
+
+  @Transactional
+  public PresignUploadResponse presignUpload(UUID userId, UUID parentId, String filename, String mimeType, Long sizeBytes) {
+    if (filename == null || filename.isBlank()) throw new BadRequestException("filename required");
+
+    if (parentId != null) {
+      var access = perms.accessFor(userId, parentId);
+      if (!access.canWrite()) throw new ForbiddenException("Need EDITOR to upload into folder");
+      Item parent = items.findById(parentId);
+      if (parent == null || parent.type != ItemType.FOLDER) throw new BadRequestException("parentId must be a folder");
+    }
+
+    Item it = new Item();
+    it.id = UUID.randomUUID();
+    it.ownerUserId = userId;
+    it.parentId = parentId;
+    it.type = ItemType.FILE;
+    it.name = filename;
+    it.mimeType = (mimeType == null || mimeType.isBlank()) ? "application/octet-stream" : mimeType;
+    it.sizeBytes = sizeBytes;
+    it.s3Key = "items/" + it.id;
+    it.createdAt = Instant.now();
+    it.updatedAt = it.createdAt;
+
+    items.persist(it);
+
+    PutObjectRequest put = PutObjectRequest.builder()
+        .bucket(storage.bucket())
+        .key(it.s3Key)
+        .contentType(it.mimeType)
+        .build();
+
+    PutObjectPresignRequest presignReq = PutObjectPresignRequest.builder()
+        .signatureDuration(Duration.ofMinutes(10))
+        .putObjectRequest(put)
+        .build();
+
+    PresignedPutObjectRequest presigned = presigner.presignPutObject(presignReq);
+
+    PresignUploadResponse out = new PresignUploadResponse();
+    out.item = toDto(it);
+    out.uploadUrl = presigned.url().toString();
+    out.method = "PUT";
+    out.contentType = it.mimeType;
+    return out;
+  }
+
 
   public DownloadedFile downloadFile(UUID userId, UUID fileId) {
     Item it = items.findById(fileId);

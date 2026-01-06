@@ -34,6 +34,22 @@ services:
       until (/usr/bin/mc alias set local http://minio:9000 minio minio12345) do echo 'waiting for minio' && sleep 2; done;
       /usr/bin/mc mb -p local/drive-bucket || true;
       echo 'minio bucket ready';
+      
+      cat > /tmp/cors.json <<'EOF'
+      [
+        {
+          \"AllowedOrigins\": [\"http://localhost:3000\"],
+          \"AllowedMethods\": [\"GET\", \"PUT\", \"POST\", \"DELETE\", \"HEAD\"],
+          \"AllowedHeaders\": [\"*\"],
+          \"ExposeHeaders\": [\"ETag\"],
+          \"MaxAgeSeconds\": 3000
+        }
+      ]
+      EOF
+
+      /usr/bin/mc cors set local/drive-bucket /tmp/cors.json || true;
+
+      echo 'minio bucket ready';
       "
     restart: "no"
 
