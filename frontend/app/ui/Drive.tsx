@@ -219,7 +219,7 @@ export default function Drive() {
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button onClick={goBack} disabled={path.length <= 1}>Back</button>
-              <button onClick={goRoot} disabled={cwd === null}>Root</button>
+              {/* <button onClick={goRoot} disabled={cwd === null}>Root</button> */}
 
               <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} style={{ padding: 6, minWidth: 220 }} />
               <button onClick={createFolder}>Create folder</button>

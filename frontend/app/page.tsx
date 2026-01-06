@@ -5,7 +5,7 @@ export default function HomePage() {
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24 }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ margin: 0 }}>Drive Clone</h1>
+        <h1 style={{ margin: 0 }}>Splittr</h1>
         <div>
           <SignedOut>
             <SignInButton />

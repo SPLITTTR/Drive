@@ -2,7 +2,7 @@ import './globals.css';
 import { ClerkProvider } from '@clerk/nextjs';
 
 export const metadata = {
-  title: 'Drive Clone',
+  title: 'Splittr',
   description: 'School project starter',
 };
 
