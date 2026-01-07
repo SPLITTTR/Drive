@@ -44,6 +44,14 @@ export default function Drive() {
 
 
   const thumbsRef = useRef<ThumbMap>({});
+  
+  // Share dialog state (role picker + username input)
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareItemId, setShareItemId] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState('');
+  const [shareRole, setShareRole] = useState<'VIEWER' | 'EDITOR'>('VIEWER');
+  const [shareBusy, setShareBusy] = useState(false);
+
   useEffect(() => {
     thumbsRef.current = thumbUrlById;
   }, [thumbUrlById]);
@@ -242,15 +250,31 @@ async function createFolder() {
   }
 
   async function shareItem(id: string) {
-    const target = prompt('Target username?');
+    setShareItemId(id);
+    setShareTarget('');
+    setShareRole('VIEWER');
+    setShareOpen(true);
+  }
+
+
+  async function submitShare() {
+    if (!shareItemId) return;
+    const target = shareTarget.trim();
     if (!target) return;
-    const role = (prompt('Role: VIEWER or EDITOR?', 'VIEWER') || 'VIEWER').toUpperCase();
-    await authedFetch(`/v1/items/${id}/share`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetUsername: target, role }),
-    });
-    alert('Shared.');
+
+    setShareBusy(true);
+    try {
+      await authedFetch(`/v1/items/${shareItemId}/share`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ targetUsername: target, role: shareRole }),
+      });
+      setShareOpen(false);
+      setShareItemId(null);
+      alert('Shared.');
+    } finally {
+      setShareBusy(false);
+    }
   }
 
   type PresignUploadResponse = {
@@ -507,7 +531,21 @@ async function createFolder() {
           )}
         </>
       )}
-      {previewId && (
+            {shareOpen && (
+        <ShareDialog
+          target={shareTarget}
+          role={shareRole}
+          busy={shareBusy}
+          onTargetChange={setShareTarget}
+          onPickRole={setShareRole}
+          onSubmit={submitShare}
+          onClose={() => {
+            setShareOpen(false);
+            setShareItemId(null);
+          }}
+        />
+      )}
+{previewId && (
         <ImagePreview
           title={previewItem?.name || 'Preview'}
           url={thumbUrlById[previewId]}
@@ -666,6 +704,118 @@ function ItemTable({
         ))}
       </tbody>
     </table>
+  );
+}
+
+
+function ShareDialog({
+  target,
+  role,
+  busy,
+  onTargetChange,
+  onPickRole,
+  onSubmit,
+  onClose,
+}: {
+  target: string;
+  role: 'VIEWER' | 'EDITOR';
+  busy: boolean;
+  onTargetChange: (v: string) => void;
+  onPickRole: (r: 'VIEWER' | 'EDITOR') => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.45)',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 16,
+        zIndex: 60,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white',
+          borderRadius: 10,
+          padding: 16,
+          width: 'min(520px, 95vw)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+          display: 'grid',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontWeight: 700 }}>Share</div>
+          <button onClick={onClose} type="button">Close</button>
+        </div>
+
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: 13, opacity: 0.8 }}>Username</span>
+          <input
+            ref={inputRef}
+            value={target}
+            onChange={(e) => onTargetChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSubmit();
+              if (e.key === 'Escape') onClose();
+            }}
+            placeholder="e.g. jane_doe"
+            style={{ padding: 8, border: '1px solid #ccc', borderRadius: 8 }}
+          />
+        </label>
+
+        <div style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: 13, opacity: 0.8 }}>Access</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => onPickRole('VIEWER')}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 999,
+                border: '1px solid #ccc',
+                fontWeight: role === 'VIEWER' ? 700 : 400,
+                background: role === 'VIEWER' ? '#f2f2f2' : 'white',
+              }}
+            >
+              Viewer
+            </button>
+            <button
+              type="button"
+              onClick={() => onPickRole('EDITOR')}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 999,
+                border: '1px solid #ccc',
+                fontWeight: role === 'EDITOR' ? 700 : 400,
+                background: role === 'EDITOR' ? '#f2f2f2' : 'white',
+              }}
+            >
+              Editor
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" onClick={onSubmit} disabled={busy || !target.trim()}>
+            {busy ? 'Sharing…' : 'Share'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
