@@ -14,6 +14,22 @@ function isImage(it: ItemDto): boolean {
   return it.type === 'FILE' && !!it.mimeType && it.mimeType.startsWith('image/');
 }
 
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let i = -1;
+  while (value >= 1024 && i < units.length - 1) {
+    value = value / 1024;
+    i++;
+  }
+  const rounded = value >= 10 ? value.toFixed(0) : value.toFixed(1);
+  return `${rounded.replace(/\.0$/, '')} ${units[i]}`;
+}
+
+
 export default function Drive() {
   const authedFetch = useAuthedFetch();
   const { user, isLoaded, isSignedIn } = useUser();
@@ -782,7 +798,7 @@ function ItemTable({
               )}
             </td>
             <td>{it.type}</td>
-            <td>{it.type === 'FILE' ? (it.sizeBytes ?? 0) : ''}</td>
+            <td>{it.type === 'FILE' && typeof it.sizeBytes === 'number' ? formatBytes(it.sizeBytes) : ''}</td>
             <td style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {it.type === 'FILE' && <button onClick={() => onDownload(it)}>Download</button>}
               <button onClick={() => onRename(it.id)}>Rename</button>
