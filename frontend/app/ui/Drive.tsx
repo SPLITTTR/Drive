@@ -35,6 +35,9 @@ export default function Drive() {
   const [thumbUrlById, setThumbUrlById] = useState<ThumbMap>({});
   const [previewId, setPreviewId] = useState<string | null>(null);
 
+  const [pickedFileName, setPickedFileName] = useState<string>('No file chosen');
+
+
   const thumbsRef = useRef<ThumbMap>({});
   useEffect(() => {
     thumbsRef.current = thumbUrlById;
@@ -301,9 +304,6 @@ async function createFolder() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setTab('MY_DRIVE')} disabled={tab === 'MY_DRIVE'}>My Drive</button>
         <button onClick={() => setTab('SHARED')} disabled={tab === 'SHARED'}>Shared with me</button>
-        <span style={{ opacity: 0.75 }}>
-          Your Clerk user id: <code>{myClerkId ?? '...'}</code>
-        </span>
       </div>
 
       {tab === 'MY_DRIVE' && (
@@ -336,10 +336,55 @@ async function createFolder() {
               <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} style={{ padding: 6, minWidth: 220 }} />
               <button onClick={createFolder}>Create folder</button>
 
-              <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <span>Upload:</span>
-                <input type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f).catch(err => alert(String(err))); }} />
-              </label>
+
+                {/* skrit native input */}
+                <input
+                  id="filePicker"
+                  type="file"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setPickedFileName(f.name);
+                    uploadFile(f).catch(err => alert(String(err)));
+                    // opcijsko: reset, da lahko izbereš isti file še enkrat
+                    e.currentTarget.value = '';
+                  }}
+                />
+
+                {/* gumb za izbiro */}
+                <label
+                  htmlFor="filePicker"
+                  style={{
+                    padding: '6px 10px',
+                    border: '1px solid #ccc',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Browse…
+                </label>
+
+                {/* filename s truncation, fiksna širina => nič ne skače */}
+                <span
+                  title={pickedFileName}
+                  style={{
+                    maxWidth: 260,     // prilagodi po želji
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    display: 'inline-block',
+                    opacity: 0.85
+                  }}
+                >
+                  {pickedFileName}
+                </span>
+              </div>
+
 
               {loading && <span>Loading…</span>}
             </div>
