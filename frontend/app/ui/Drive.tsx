@@ -10,6 +10,18 @@ type Crumb = { id: string | null; name: string };
 
 type ThumbMap = Record<string, string>; // itemId -> objectURL
 
+
+
+type UploadStatus = 'STARTING' | 'UPLOADING' | 'DONE' | 'ERROR' | 'CANCELLED';
+
+type UploadEntry = {
+  id: string;
+  name: string;
+  status: UploadStatus;
+  progress: number | null; // 0-100, null if unknown
+  error?: string;
+};
+
 function isImage(it: ItemDto): boolean {
   return it.type === 'FILE' && !!it.mimeType && it.mimeType.startsWith('image/');
 }
@@ -58,6 +70,12 @@ export default function Drive() {
 
   const [pickedFileName, setPickedFileName] = useState<string>('No file chosen');
 
+  // Upload panel (bottom-right)
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
+  const [uploadPanelCollapsed, setUploadPanelCollapsed] = useState(false);
+  const uploadXhrById = useRef<Map<string, XMLHttpRequest>>(new Map());
+
   // Search
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState<ItemDto[]>([]);
@@ -67,6 +85,8 @@ export default function Drive() {
 
 
   const thumbsRef = useRef<ThumbMap>({});
+  const tabRef = useRef<Tab>(tab);
+  const myCwdRef = useRef<string | null>(myCwd);
   
   // Share dialog state (role picker + username input)
   const [shareOpen, setShareOpen] = useState(false);
@@ -79,6 +99,14 @@ export default function Drive() {
   useEffect(() => {
     thumbsRef.current = thumbUrlById;
   }, [thumbUrlById]);
+
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+
+  useEffect(() => {
+    myCwdRef.current = myCwd;
+  }, [myCwd]);
 
   const previewItem = useMemo(() => {
     if (!previewId) return null;
@@ -101,6 +129,18 @@ export default function Drive() {
   async function loadShared() {
     const data = await authedFetch('/v1/shared');
     setSharedRoots((data as ItemDto[]) || []);
+  }
+
+  function updateUpload(id: string, patch: Partial<UploadEntry>) {
+    setUploads((list) => list.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  }
+
+  function cancelUpload(id: string) {
+    const xhr = uploadXhrById.current.get(id);
+    if (xhr) {
+      try { xhr.abort(); } catch {}
+    }
+    updateUpload(id, { status: 'CANCELLED' });
   }
 
   async function loadSharedChildren(folderId: string) {
@@ -362,26 +402,84 @@ if (tab === 'MY_DRIVE') {
   };
 
   async function uploadFile(file: File) {
-    const presign = (await authedFetch('/v1/files/presign-upload', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        parentId: myCwd,
-        filename: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        sizeBytes: file.size,
-      }),
-    })) as PresignUploadResponse;
+    const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const parentIdAtUpload = myCwd;
 
-    const putRes = await fetch(presign.uploadUrl, {
-      method: presign.method || 'PUT',
-      headers: { 'Content-Type': presign.contentType || file.type || 'application/octet-stream' },
-      body: file,
-    });
+    setUploadPanelOpen(true);
+    setUploadPanelCollapsed(false);
 
-    if (!putRes.ok) throw new Error(`Upload to storage failed (${putRes.status})`);
+    setUploads((list) => [
+      { id: uploadId, name: file.name, status: 'STARTING' as UploadStatus, progress: 0 },
+      ...list,
+    ].slice(0, 25));
 
-    await loadMyDrive(myCwd);
+    try {
+      const presign = (await authedFetch('/v1/files/presign-upload', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          parentId: parentIdAtUpload,
+          filename: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+        }),
+      })) as PresignUploadResponse;
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        uploadXhrById.current.set(uploadId, xhr);
+
+        xhr.open(presign.method || 'PUT', presign.uploadUrl, true);
+
+        const ct = presign.contentType || file.type || 'application/octet-stream';
+        try { xhr.setRequestHeader('Content-Type', ct); } catch {}
+
+        xhr.upload.onprogress = (evt) => {
+          updateUpload(uploadId, { status: 'UPLOADING' });
+          if (evt.lengthComputable) {
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            updateUpload(uploadId, { progress: pct });
+          } else {
+            updateUpload(uploadId, { progress: null });
+          }
+        };
+
+        xhr.onload = () => {
+          uploadXhrById.current.delete(uploadId);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload to storage failed (${xhr.status})`));
+          }
+        };
+
+        xhr.onerror = () => {
+          uploadXhrById.current.delete(uploadId);
+          reject(new Error('Upload to storage failed'));
+        };
+
+        xhr.onabort = () => {
+          uploadXhrById.current.delete(uploadId);
+          reject(new Error('Upload cancelled'));
+        };
+
+        xhr.send(file);
+      });
+
+      updateUpload(uploadId, { status: 'DONE', progress: 100 });
+
+      // Refresh current folder only if user is still viewing the same one
+      if (tabRef.current === 'MY_DRIVE' && myCwdRef.current === parentIdAtUpload) {
+        await loadMyDrive(parentIdAtUpload);
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.toLowerCase().includes('cancel')) {
+        updateUpload(uploadId, { status: 'CANCELLED' });
+      } else {
+        updateUpload(uploadId, { status: 'ERROR', error: msg });
+      }
+    }
   }
 
   function goRoot() {
@@ -513,13 +611,19 @@ if (tab === 'MY_DRIVE') {
                 <input
                   id="filePicker"
                   type="file"
+                  multiple
                   style={{ display: 'none' }}
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    setPickedFileName(f.name);
-                    uploadFile(f).catch(err => alert(String(err)));
-                    // opcijsko: reset, da lahko izbereš isti file še enkrat
+                    const files = Array.from(e.target.files || []);
+                    if (!files.length) return;
+
+                    setPickedFileName(files.length === 1 ? files[0].name : `${files.length} files selected`);
+
+                    files.forEach((f) => {
+                      uploadFile(f).catch((err) => alert(String(err)));
+                    });
+
+                    // reset, da lahko izbereš isti file še enkrat
                     e.currentTarget.value = '';
                   }}
                 />
@@ -635,6 +739,7 @@ if (tab === 'MY_DRIVE') {
           )}
         </>
       )}
+
       {shareOpen && (
         <ShareDialog
           target={shareTarget}
@@ -659,6 +764,190 @@ if (tab === 'MY_DRIVE') {
             if (previewItem) downloadFile(previewItem).catch(err => alert(String(err)));
           }}
         />
+      )}
+
+      {uploadPanelOpen && (
+        <UploadPanel
+          uploads={uploads}
+          collapsed={uploadPanelCollapsed}
+          onToggleCollapsed={() => setUploadPanelCollapsed((v) => !v)}
+          onClose={() => setUploadPanelOpen(false)}
+          onCancel={cancelUpload}
+        />
+      )}
+    </div>
+  );
+}
+
+
+function UploadPanel({
+  uploads,
+  collapsed,
+  onToggleCollapsed,
+  onClose,
+  onCancel,
+}: {
+  uploads: UploadEntry[];
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onClose: () => void;
+  onCancel: (id: string) => void;
+}) {
+  const active = uploads.filter((u) => u.status === 'STARTING' || u.status === 'UPLOADING').length;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        right: 16,
+        bottom: 16,
+        width: 'min(520px, calc(100vw - 32px))',
+        background: 'white',
+        borderRadius: 12,
+        boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+        border: '1px solid rgba(0,0,0,0.08)',
+        overflow: 'hidden',
+        zIndex: 1200,
+        fontSize: 14,
+      }}
+    >
+      <div
+        style={{
+          padding: '10px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: collapsed ? 'none' : '1px solid rgba(0,0,0,0.08)',
+          background: '#fafafa',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {active > 0 ? `Uploading ${active} item${active === 1 ? '' : 's'}` : `Uploads (${uploads.length})`}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            style={{
+              border: '1px solid rgba(0,0,0,0.15)',
+              background: 'white',
+              borderRadius: 8,
+              padding: '4px 8px',
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            {collapsed ? '▴' : '▾'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close"
+            style={{
+              border: '1px solid rgba(0,0,0,0.15)',
+              background: 'white',
+              borderRadius: 8,
+              padding: '4px 8px',
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div style={{ maxHeight: 'min(560px, calc(100vh - 160px))', overflow: 'auto' }}>
+          {active > 0 && (
+            <div style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ opacity: 0.8 }}>Starting upload…</div>
+              <button
+                type="button"
+                onClick={() => {
+                  // cancel all active
+                  uploads
+                    .filter((u) => u.status === 'STARTING' || u.status === 'UPLOADING')
+                    .forEach((u) => onCancel(u.id));
+                }}
+                style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {uploads.map((u) => (
+            <div
+              key={u.id}
+              style={{
+                padding: '10px 12px',
+                display: 'grid',
+                gridTemplateColumns: '22px 1fr 64px',
+                alignItems: 'center',
+                gap: 10,
+                borderTop: '1px solid rgba(0,0,0,0.06)',
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  background: 'rgba(220, 38, 38, 0.12)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 12,
+                }}
+                title="File"
+              >
+                ⬆
+              </div>
+
+              <div style={{ minWidth: 0 }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
+                {u.status === 'ERROR' && (
+                  <div style={{ color: 'crimson', fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {u.error || 'Upload failed'}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                {(u.status === 'STARTING' || u.status === 'UPLOADING') && (
+                  <>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      {typeof u.progress === 'number' ? `${u.progress}%` : '…'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onCancel(u.id)}
+                      title="Cancel"
+                      style={{
+                        border: '1px solid rgba(0,0,0,0.15)',
+                        background: 'white',
+                        borderRadius: 999,
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+
+                {u.status === 'DONE' && <div title="Done" style={{ color: 'green', fontWeight: 700 }}>✓</div>}
+                {u.status === 'CANCELLED' && <div title="Cancelled" style={{ opacity: 0.6 }}>—</div>}
+                {u.status === 'ERROR' && <div title="Error" style={{ color: 'crimson', fontWeight: 700 }}>!</div>}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -865,7 +1154,6 @@ function ShareDialog({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
           <div style={{ fontWeight: 700 }}>Share</div>
-          <button onClick={onClose} type="button">Close</button>
         </div>
 
         <label style={{ display: 'grid', gap: 6 }}>
