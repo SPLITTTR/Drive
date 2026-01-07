@@ -284,7 +284,7 @@ public class ItemService {
 
     Item it = items.findById(itemId);
     if (it == null) throw new NotFoundException("Item not found");
-    if (!it.ownerUserId.equals(ownerUserId)) throw new ForbiddenException("Only owner can share in this MVP");
+    if (!it.ownerUserId.equals(ownerUserId)) throw new ForbiddenException("Only owner can share");
 
     // Upsert share
     ItemShare existing = shares.findById(new ItemShareId(itemId, target.id));

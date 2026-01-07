@@ -20,11 +20,16 @@ export default function Drive() {
 
   const [tab, setTab] = useState<Tab>('MY_DRIVE');
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
-  const [path, setPath] = useState<Crumb[]>([{ id: null, name: 'Root' }]);
-  const cwd = path[path.length - 1].id; // null = root
+  // Separate navigation stacks so Back behaves correctly in My Drive vs Shared.
+  const [myPath, setMyPath] = useState<Crumb[]>([{ id: null, name: 'Root' }]);
+  const [sharedPath, setSharedPath] = useState<Crumb[]>([{ id: null, name: 'Shared' }]);
+
+  const myCwd = myPath[myPath.length - 1].id; // null = My Drive root
+  const sharedCwd = sharedPath[sharedPath.length - 1].id; // null = Shared root (list shared items)
 
   const [items, setItems] = useState<ItemDto[]>([]);
   const [sharedRoots, setSharedRoots] = useState<ItemDto[]>([]);
+  const [sharedItems, setSharedItems] = useState<ItemDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [myClerkId, setMyClerkId] = useState<string | null>(null);
   const [myUsername, setMyUsername] = useState<string | null>(null);
@@ -66,6 +71,16 @@ export default function Drive() {
     setSharedRoots((data as ItemDto[]) || []);
   }
 
+  async function loadSharedChildren(folderId: string) {
+    setLoading(true);
+    try {
+      const data = await authedFetch(`/v1/folders/${folderId}/children`);
+      setSharedItems((data as ItemDto[]) || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadMe() {
     const data = (await authedFetch('/v1/me')) as { userId: string; clerkUserId: string; username?: string | null };
     setMyClerkId(data?.clerkUserId || null);
@@ -94,12 +109,17 @@ export default function Drive() {
   }
 
   useEffect(() => {
-    if (tab === 'MY_DRIVE') loadMyDrive(cwd).catch(err => alert(String(err)));
-  }, [tab, cwd]);
+    if (tab === 'MY_DRIVE') loadMyDrive(myCwd).catch(err => alert(String(err)));
+  }, [tab, myCwd]);
 
   useEffect(() => {
-    loadShared().catch(() => {});
-  }, []);
+    if (tab !== 'SHARED') return;
+    if (sharedCwd === null) {
+      loadShared().catch(() => {});
+    } else {
+      loadSharedChildren(sharedCwd).catch(err => alert(String(err)));
+    }
+  }, [tab, sharedCwd]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
@@ -111,7 +131,8 @@ export default function Drive() {
     let cancelled = false;
 
     async function run() {
-      const current = (tab === 'MY_DRIVE' ? items : sharedRoots).filter(isImage);
+      const currentList = tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems);
+      const current = currentList.filter(isImage);
       const currentIds = new Set(current.map(i => i.id));
 
       // Revoke thumbnails for images that are no longer visible.
@@ -182,15 +203,27 @@ async function createFolder() {
     await authedFetch('/v1/folders', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ parentId: cwd, name: newFolderName }),
+      body: JSON.stringify({ parentId: myCwd, name: newFolderName }),
     });
-    await loadMyDrive(cwd);
+    await loadMyDrive(myCwd);
+  }
+
+  async function refreshCurrent() {
+    if (tab === 'MY_DRIVE') {
+      await loadMyDrive(myCwd);
+      return;
+    }
+
+    if (sharedCwd === null) {
+      await loadShared();
+    } else {
+      await loadSharedChildren(sharedCwd);
+    }
   }
 
   async function deleteItem(id: string) {
     await authedFetch(`/v1/items/${id}`, { method: 'DELETE' });
-    await loadMyDrive(cwd);
-    await loadShared();
+    await refreshCurrent();
   }
 
   async function renameItem(id: string) {
@@ -202,14 +235,14 @@ async function createFolder() {
       body: JSON.stringify({ name }),
     });
     // keep breadcrumb consistent if user renames a folder in the current path
-    setPath(p => p.map(c => (c.id === id ? { ...c, name } : c)));
+    setMyPath(p => p.map(c => (c.id === id ? { ...c, name } : c)));
+    setSharedPath(p => p.map(c => (c.id === id ? { ...c, name } : c)));
 
-    await loadMyDrive(cwd);
-    await loadShared();
+    await refreshCurrent();
   }
 
-  async function shareRoot(id: string) {
-    const target = prompt('Target username (as chosen in Clerk sign-up)?');
+  async function shareItem(id: string) {
+    const target = prompt('Target username?');
     if (!target) return;
     const role = (prompt('Role: VIEWER or EDITOR?', 'VIEWER') || 'VIEWER').toUpperCase();
     await authedFetch(`/v1/items/${id}/share`, {
@@ -232,7 +265,7 @@ async function createFolder() {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        parentId: cwd,
+        parentId: myCwd,
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         sizeBytes: file.size,
@@ -247,34 +280,41 @@ async function createFolder() {
 
     if (!putRes.ok) throw new Error(`Upload to storage failed (${putRes.status})`);
 
-    await loadMyDrive(cwd);
+    await loadMyDrive(myCwd);
   }
 
   function goRoot() {
-    setTab('MY_DRIVE');
-    setPath([{ id: null, name: 'Root' }]);
+    if (tab === 'MY_DRIVE') {
+      setMyPath([{ id: null, name: 'Root' }]);
+    } else {
+      setSharedPath([{ id: null, name: 'Shared' }]);
+    }
   }
 
   function goBack() {
-    setPath((p) => (p.length > 1 ? p.slice(0, -1) : p));
+    if (tab === 'MY_DRIVE') {
+      setMyPath(p => (p.length > 1 ? p.slice(0, -1) : p));
+    } else {
+      setSharedPath(p => (p.length > 1 ? p.slice(0, -1) : p));
+    }
   }
 
   function jumpTo(index: number) {
-    setPath((p) => p.slice(0, index + 1));
+    if (tab === 'MY_DRIVE') {
+      setMyPath(p => p.slice(0, index + 1));
+    } else {
+      setSharedPath(p => p.slice(0, index + 1));
+    }
   }
 
   function openFolder(it: ItemDto) {
     if (it.type !== 'FOLDER') return;
 
-    if (tab !== 'MY_DRIVE') {
-      // coming from Shared tab: start a fresh breadcrumb
-      setTab('MY_DRIVE');
-      setPath([{ id: null, name: 'Root' }, { id: it.id, name: it.name }]);
-      return;
+    if (tab === 'MY_DRIVE') {
+      setMyPath(p => [...p, { id: it.id, name: it.name }]);
+    } else {
+      setSharedPath(p => [...p, { id: it.id, name: it.name }]);
     }
-
-    // normal navigation inside My Drive
-    setPath((p) => [...p, { id: it.id, name: it.name }]);
   }
 
   async function downloadFile(it: ItemDto) {
@@ -297,7 +337,9 @@ async function createFolder() {
     URL.revokeObjectURL(url);
   }
 
-  const currentList = tab === 'MY_DRIVE' ? items : sharedRoots;
+  const activePath = tab === 'MY_DRIVE' ? myPath : sharedPath;
+  const cwd = tab === 'MY_DRIVE' ? myCwd : sharedCwd;
+  const currentList = tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems);
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -310,8 +352,8 @@ async function createFolder() {
         <>
           <div style={{ display: 'grid', gap: 8 }}>
             <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {path.map((c, idx) => {
-                const isLast = idx === path.length - 1;
+              {activePath.map((c, idx) => {
+                const isLast = idx === activePath.length - 1;
                 return (
                   <span key={String(c.id) + idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     {isLast ? (
@@ -326,7 +368,7 @@ async function createFolder() {
             </nav>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button onClick={goBack} disabled={path.length <= 1}>Back</button>
+              <button onClick={goBack} disabled={activePath.length <= 1}>Back</button>
               {/* <button onClick={goRoot} disabled={cwd === null}>Root</button> */}
 
               <span style={{ marginLeft: 8, opacity: 0.8 }}>View:</span>
@@ -398,7 +440,7 @@ async function createFolder() {
               onPreview={(it) => setPreviewId(it.id)}
               onDownload={downloadFile}
               onRename={renameItem}
-              onShare={shareRoot}
+              onShare={shareItem}
               onDelete={deleteItem}
             />
           ) : (
@@ -407,7 +449,7 @@ async function createFolder() {
               onOpenFolder={openFolder}
               onDelete={deleteItem}
               onRename={renameItem}
-              onShare={shareRoot}
+              onShare={shareItem}
               onDownload={downloadFile}
             />
           )}
@@ -416,40 +458,55 @@ async function createFolder() {
 
       {tab === 'SHARED' && (
         <>
-          <p style={{ margin: 0 }}>
-            In this MVP, only <b>root items</b> can be shared (“shared roots only”).
-          </p>
+          <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {activePath.map((c, idx) => {
+              const isLast = idx === activePath.length - 1;
+              return (
+                <span key={String(c.id) + idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {isLast ? (
+                    <span style={{ fontWeight: 600 }}>{c.name}</span>
+                  ) : (
+                    <button type="button" onClick={() => jumpTo(idx)}>{c.name}</button>
+                  )}
+                  {!isLast && <span>/</span>}
+                </span>
+              );
+            })}
+          </nav>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ opacity: 0.8 }}>View:</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={goBack} disabled={activePath.length <= 1}>Back</button>
+
+            <span style={{ marginLeft: 8, opacity: 0.8 }}>View:</span>
             <button onClick={() => setViewMode('GRID')} disabled={viewMode === 'GRID'}>Grid</button>
             <button onClick={() => setViewMode('LIST')} disabled={viewMode === 'LIST'}>List</button>
+
+            {loading && <span>Loading…</span>}
           </div>
 
           {viewMode === 'GRID' ? (
             <ItemGrid
-              items={sharedRoots}
+              items={currentList}
               thumbUrlById={thumbUrlById}
               onOpenFolder={openFolder}
               onPreview={(it) => setPreviewId(it.id)}
-              onDownload={downloadFile}
-              onRename={renameItem}
-              onShare={() => alert('Only owners can share in this MVP')}
               onDelete={deleteItem}
+              onRename={renameItem}
+              onShare={shareItem}
+              onDownload={downloadFile}
             />
           ) : (
             <ItemTable
-              items={sharedRoots}
+              items={currentList}
               onOpenFolder={openFolder}
               onDelete={deleteItem}
               onRename={renameItem}
-              onShare={() => alert('Only owners can share in this MVP')}
+              onShare={shareItem}
               onDownload={downloadFile}
             />
           )}
         </>
       )}
-
       {previewId && (
         <ImagePreview
           title={previewItem?.name || 'Preview'}
