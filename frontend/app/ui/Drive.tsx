@@ -51,6 +51,7 @@ export default function Drive() {
   const [shareTarget, setShareTarget] = useState('');
   const [shareRole, setShareRole] = useState<'VIEWER' | 'EDITOR'>('VIEWER');
   const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   useEffect(() => {
     thumbsRef.current = thumbUrlById;
@@ -253,6 +254,7 @@ async function createFolder() {
     setShareItemId(id);
     setShareTarget('');
     setShareRole('VIEWER');
+    setShareError(null);
     setShareOpen(true);
   }
 
@@ -262,7 +264,14 @@ async function createFolder() {
     const target = shareTarget.trim();
     if (!target) return;
 
+    // Prevent sharing to self (also enforced on backend)
+    if (myUsername && target.toLowerCase() === myUsername.toLowerCase()) {
+      setShareError('You can not share to yourself');
+      return;
+    }
+
     setShareBusy(true);
+    setShareError(null);
     try {
       await authedFetch(`/v1/items/${shareItemId}/share`, {
         method: 'POST',
@@ -271,12 +280,15 @@ async function createFolder() {
       });
       setShareOpen(false);
       setShareItemId(null);
+      setShareTarget('');
       alert('Shared.');
+    } catch (e: any) {
+      setShareError(String(e?.message || e));
     } finally {
       setShareBusy(false);
     }
   }
-
+  
   type PresignUploadResponse = {
     item: ItemDto;
     uploadUrl: string;
@@ -531,11 +543,12 @@ async function createFolder() {
           )}
         </>
       )}
-            {shareOpen && (
+      {shareOpen && (
         <ShareDialog
           target={shareTarget}
           role={shareRole}
           busy={shareBusy}
+          error={shareError}
           onTargetChange={setShareTarget}
           onPickRole={setShareRole}
           onSubmit={submitShare}
@@ -545,7 +558,7 @@ async function createFolder() {
           }}
         />
       )}
-{previewId && (
+      {previewId && (
         <ImagePreview
           title={previewItem?.name || 'Preview'}
           url={thumbUrlById[previewId]}
@@ -712,6 +725,7 @@ function ShareDialog({
   target,
   role,
   busy,
+  error,
   onTargetChange,
   onPickRole,
   onSubmit,
@@ -720,6 +734,7 @@ function ShareDialog({
   target: string;
   role: 'VIEWER' | 'EDITOR';
   busy: boolean;
+  error: string | null;
   onTargetChange: (v: string) => void;
   onPickRole: (r: 'VIEWER' | 'EDITOR') => void;
   onSubmit: () => void;
@@ -774,7 +789,12 @@ function ShareDialog({
             placeholder="e.g. jane_doe"
             style={{ padding: 8, border: '1px solid #ccc', borderRadius: 8 }}
           />
-        </label>
+                  {error && (
+            <div style={{ marginTop: 8, color: 'crimson', fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+</label>
 
         <div style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 13, opacity: 0.8 }}>Access</span>

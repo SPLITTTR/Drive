@@ -17,7 +17,9 @@ public class ExceptionMappers {
   public static class NotFoundMapper implements ExceptionMapper<ItemService.NotFoundException> {
     @Override
     public Response toResponse(ItemService.NotFoundException e) {
-      return Response.status(404).type(MediaType.APPLICATION_JSON).entity(new ErrorBody("not_found")).build();
+      String msg = e.getMessage();
+      if (msg == null || msg.isBlank()) msg = "not_found";
+      return Response.status(404).type(MediaType.APPLICATION_JSON).entity(new ErrorBody(msg)).build();
     }
   }
 

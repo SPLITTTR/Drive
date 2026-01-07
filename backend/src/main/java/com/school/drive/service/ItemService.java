@@ -92,18 +92,6 @@ public class ItemService {
   public ItemDto createFolder(UUID userId, UUID parentId, String name) {
     if (name == null || name.isBlank()) throw new BadRequestException("name required");
 
-    if (name == null || name.isBlank()) throw new WebApplicationException("name is required", 400);
-
-    Item parent1 = null;
-    if (parentId != null) {
-      parent1 = items.findById(parentId);
-    if (parent1 == null) throw new WebApplicationException("parent not found", 404);
-    if (parent1.type != ItemType.FOLDER) throw new WebApplicationException("parent must be folder", 400);
-
-    // tu šele preveri pravice za parent
-    // permissionService.requireEditor(userId, parentId);
-  }
-
     if (parentId != null) {
       var access = perms.accessFor(userId, parentId);
       if (!access.canWrite()) throw new ForbiddenException("Need EDITOR to create in folder");
@@ -268,7 +256,7 @@ public class ItemService {
     if (targetUsername != null && !targetUsername.isBlank()) {
       String normalized = targetUsername.trim().toLowerCase();
       target = users.findByUsername(normalized);
-      if (target == null) throw new NotFoundException("No user with that username (user must sign in at least once)");
+      if (target == null) throw new NotFoundException("User not found");
     } else {
       String clerkId = targetClerkUserId.trim();
       target = users.findByClerkUserId(clerkId);
@@ -281,6 +269,8 @@ public class ItemService {
         users.persist(target);
       }
     }
+
+        if (target.id.equals(ownerUserId)) throw new BadRequestException("You can not share to yourself");
 
     Item it = items.findById(itemId);
     if (it == null) throw new NotFoundException("Item not found");
@@ -314,7 +304,7 @@ public class ItemService {
 
 @Transactional
 public void deleteItem(UUID userId, UUID itemId) {
-  Item it = items.findById(itemId);
+    Item it = items.findById(itemId);
   if (it == null) return;
 
   var access = perms.accessFor(userId, itemId);
