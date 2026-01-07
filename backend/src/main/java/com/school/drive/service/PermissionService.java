@@ -44,20 +44,20 @@ public class PermissionService {
         "FROM item_share s " +
         "JOIN ancestors a ON a.id = s.item_id " +
         "WHERE s.shared_with_user_id = ?2 " +
-        "ORDER BY CASE s.role WHEN 'EDITOR' THEN 2 WHEN 'VIEWER' THEN 1 ELSE 0 END DESC " +
+        "ORDER BY CASE s.role WHEN 'OWNER' THEN 3 WHEN 'EDITOR' THEN 2 WHEN 'VIEWER' THEN 1 ELSE 0 END DESC " +
         "LIMIT 1";
 
     var q = items.getEntityManager()
       .createNativeQuery(sql)
       .setParameter(1, itemId)
       .setParameter(2, userId)
-      .setMaxResults(1);
+      ;
 
     var list = q.getResultList();
     Object role = list.isEmpty() ? null : list.get(0);
 
     if (role == null) return Access.NONE;
     ShareRole r = ShareRole.valueOf(role.toString());
-    return (r == ShareRole.EDITOR) ? Access.EDITOR : Access.VIEWER;
+    return (r == ShareRole.EDITOR || r == ShareRole.OWNER) ? Access.EDITOR : Access.VIEWER;
   }
 }

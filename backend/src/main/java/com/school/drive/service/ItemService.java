@@ -285,7 +285,6 @@ public class ItemService {
     Item it = items.findById(itemId);
     if (it == null) throw new NotFoundException("Item not found");
     if (!it.ownerUserId.equals(ownerUserId)) throw new ForbiddenException("Only owner can share in this MVP");
-    if (it.parentId != null) throw new BadRequestException("Only root items can be shared");
 
     // Upsert share
     ItemShare existing = shares.findById(new ItemShareId(itemId, target.id));
@@ -308,7 +307,6 @@ public class ItemService {
     for (ItemShare s : myShares) {
       Item it = items.findById(s.id.itemId);
       if (it == null) continue;
-      if (it.parentId != null) continue; // enforce shared-roots
       roots.add(toDto(it));
     }
     return roots;

@@ -2,9 +2,10 @@ package com.school.drive.model;
 
 public enum ShareRole {
   VIEWER,
-  EDITOR;
+  EDITOR,
+  OWNER;
 
   public boolean canWrite() {
-    return this == EDITOR;
+    return this == EDITOR || this == OWNER;
   }
 }
