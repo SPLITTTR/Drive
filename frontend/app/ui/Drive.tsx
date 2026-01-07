@@ -42,6 +42,13 @@ export default function Drive() {
 
   const [pickedFileName, setPickedFileName] = useState<string>('No file chosen');
 
+  // Search
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState<ItemDto[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+
 
   const thumbsRef = useRef<ThumbMap>({});
   
@@ -140,7 +147,7 @@ export default function Drive() {
     let cancelled = false;
 
     async function run() {
-      const currentList = tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems);
+      const currentList = searchQ.trim() ? searchResults : (tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems));
       const current = currentList.filter(isImage);
       const currentIds = new Set(current.map(i => i.id));
 
@@ -198,7 +205,7 @@ export default function Drive() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, items, sharedRoots]);
+  }, [tab, items, sharedRoots, sharedItems, sharedCwd, searchQ, searchResults]);
   // Cleanup all thumbnails on unmount.
   useEffect(() => {
     return () => {
@@ -217,8 +224,44 @@ async function createFolder() {
     await loadMyDrive(myCwd);
   }
 
-  async function refreshCurrent() {
-    if (tab === 'MY_DRIVE') {
+  
+  async function runSearch(q: string) {
+    const query = q.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+    setSearchBusy(true);
+    setSearchError(null);
+    try {
+      const res = (await authedFetch(`/v1/search?q=${encodeURIComponent(query)}&limit=50`)) as ItemDto[];
+      setSearchResults(Array.isArray(res) ? res : []);
+    } catch (e: any) {
+      setSearchResults([]);
+      setSearchError(String(e?.message || e));
+    } finally {
+      setSearchBusy(false);
+    }
+  }
+
+  // Debounced search
+  useEffect(() => {
+    const q = searchQ;
+    const t = setTimeout(() => {
+      runSearch(q).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQ]);
+
+async function refreshCurrent() {
+    if (searchQ.trim()) {
+      await runSearch(searchQ);
+      return;
+    }
+
+if (tab === 'MY_DRIVE') {
       await loadMyDrive(myCwd);
       return;
     }
@@ -346,7 +389,14 @@ async function createFolder() {
   function openFolder(it: ItemDto) {
     if (it.type !== 'FOLDER') return;
 
-    if (tab === 'MY_DRIVE') {
+    // If user opens an item from search results, exit search and navigate normally.
+    if (searchQ.trim()) {
+      setSearchQ('');
+      setSearchResults([]);
+      setSearchError(null);
+    }
+
+if (tab === 'MY_DRIVE') {
       setMyPath(p => [...p, { id: it.id, name: it.name }]);
     } else {
       setSharedPath(p => [...p, { id: it.id, name: it.name }]);
@@ -375,7 +425,7 @@ async function createFolder() {
 
   const activePath = tab === 'MY_DRIVE' ? myPath : sharedPath;
   const cwd = tab === 'MY_DRIVE' ? myCwd : sharedCwd;
-  const currentList = tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems);
+  const currentList = searchQ.trim() ? searchResults : (tab === 'MY_DRIVE' ? items : (sharedCwd === null ? sharedRoots : sharedItems));
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -383,6 +433,26 @@ async function createFolder() {
         <button onClick={() => setTab('MY_DRIVE')} disabled={tab === 'MY_DRIVE'}>My Drive</button>
         <button onClick={() => setTab('SHARED')} disabled={tab === 'SHARED'}>Shared with me</button>
       </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        <input
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          placeholder="Search files and folders…"
+          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 8, minWidth: 240, flex: '1 1 320px' }}
+        />
+        {searchQ.trim() ? (
+          <button
+            type="button"
+            onClick={() => { setSearchQ(''); setSearchResults([]); setSearchError(null); }}
+          >
+            Clear
+          </button>
+        ) : null}
+        {searchBusy ? <span style={{ opacity: 0.7 }}>Searching…</span> : null}
+        {searchError ? <span style={{ color: 'crimson' }}>{searchError}</span> : null}
+      </div>
+
 
       {tab === 'MY_DRIVE' && (
         <>
@@ -470,7 +540,7 @@ async function createFolder() {
 
           {viewMode === 'GRID' ? (
             <ItemGrid
-              items={items}
+              items={currentList}
               thumbUrlById={thumbUrlById}
               onOpenFolder={openFolder}
               onPreview={(it) => setPreviewId(it.id)}
@@ -481,7 +551,7 @@ async function createFolder() {
             />
           ) : (
             <ItemTable
-              items={items}
+              items={currentList}
               onOpenFolder={openFolder}
               onDelete={deleteItem}
               onRename={renameItem}
