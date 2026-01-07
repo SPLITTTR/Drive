@@ -235,7 +235,13 @@ async function createFolder() {
     setSearchBusy(true);
     setSearchError(null);
     try {
-      const res = (await authedFetch(`/v1/search?q=${encodeURIComponent(query)}&limit=50`)) as ItemDto[];
+      const cwd = tab === 'MY_DRIVE' ? myCwd : sharedCwd;
+      const scope = tab === 'MY_DRIVE' ? 'MY_DRIVE' : 'SHARED';
+      const url =
+        cwd
+          ? `/v1/search?q=${encodeURIComponent(query)}&limit=50&scope=${scope}&folderId=${encodeURIComponent(String(cwd))}`
+          : `/v1/search?q=${encodeURIComponent(query)}&limit=50&scope=${scope}`;
+      const res = (await authedFetch(url)) as ItemDto[];
       setSearchResults(Array.isArray(res) ? res : []);
     } catch (e: any) {
       setSearchResults([]);
@@ -253,7 +259,7 @@ async function createFolder() {
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQ]);
+  }, [searchQ, tab, myCwd, sharedCwd]);
 
 async function refreshCurrent() {
     if (searchQ.trim()) {

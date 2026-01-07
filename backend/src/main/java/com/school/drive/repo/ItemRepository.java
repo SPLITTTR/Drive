@@ -24,6 +24,58 @@ public class ItemRepository implements PanacheRepositoryBase<Item, UUID> {
         .list();
   }
 
+  public List<Item> searchOwned(UUID ownerUserId, String q, int limit) {
+    return find("ownerUserId = ?1 and lower(name) like lower(?2) order by updatedAt desc",
+        ownerUserId, "%" + q + "%")
+        .page(0, Math.max(1, limit))
+        .list();
+  }
+
+  public List<Item> searchInSubtree(UUID rootId, String q, int limit) {
+    String sql =
+        "WITH RECURSIVE tree AS ( " +
+        "  SELECT id FROM item WHERE id = ?1 " +
+        "  UNION ALL " +
+        "  SELECT c.id FROM item c JOIN tree t ON c.parent_id = t.id " +
+        ") " +
+        "SELECT i.* FROM item i JOIN tree t ON i.id = t.id " +
+        "WHERE lower(i.name) like lower(?2) " +
+        "ORDER BY i.updated_at desc " +
+        "LIMIT ?3";
+
+    @SuppressWarnings("unchecked")
+    List<Item> res = getEntityManager()
+        .createNativeQuery(sql, Item.class)
+        .setParameter(1, rootId)
+        .setParameter(2, "%" + q + "%")
+        .setParameter(3, Math.max(1, limit))
+        .getResultList();
+    return res;
+  }
+
+  public List<Item> searchSharedVisible(UUID userId, String q, int limit) {
+    String sql =
+        "WITH RECURSIVE visible AS ( " +
+        "  SELECT s.item_id AS id FROM item_share s WHERE s.shared_with_user_id = ?1 " +
+        "  UNION ALL " +
+        "  SELECT c.id FROM item c JOIN visible v ON c.parent_id = v.id " +
+        ") " +
+        "SELECT i.* FROM item i JOIN visible v ON i.id = v.id " +
+        "WHERE lower(i.name) like lower(?2) " +
+        "ORDER BY i.updated_at desc " +
+        "LIMIT ?3";
+
+    @SuppressWarnings("unchecked")
+    List<Item> res = getEntityManager()
+        .createNativeQuery(sql, Item.class)
+        .setParameter(1, userId)
+        .setParameter(2, "%" + q + "%")
+        .setParameter(3, Math.max(1, limit))
+        .getResultList();
+    return res;
+  }
+
+
   public boolean existsInSubtree(UUID rootId, UUID possibleDescendantId) {
     String sql =
         "WITH RECURSIVE tree AS ( " +
@@ -36,9 +88,7 @@ public class ItemRepository implements PanacheRepositoryBase<Item, UUID> {
     var q = getEntityManager()
       .createNativeQuery(sql)
       .setParameter(1, rootId)
-      .setParameter(2, possibleDescendantId)
-      .setMaxResults(1);
-
+      .setParameter(2, possibleDescendantId);
     var list = q.getResultList();
     Object res = list.isEmpty() ? null : list.get(0);
 

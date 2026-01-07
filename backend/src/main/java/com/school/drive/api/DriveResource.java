@@ -118,10 +118,13 @@ public class DriveResource {
   @GET
   @Path("/search")
   public List<ItemDto> search(@QueryParam("q") String q,
-                              @QueryParam("limit") @DefaultValue("20") int limit) {
+                              @QueryParam("limit") @DefaultValue("20") int limit,
+                              @QueryParam("scope") @DefaultValue("MY_DRIVE") String scope,
+                              @QueryParam("folderId") UUID folderId) {
     UUID userId = auth.upsertCurrentUser().id;
-    return items.searchByName(userId, q, limit);
+    return items.searchScoped(userId, q, limit, scope, folderId);
   }
+
 
   @POST
   @Path("/files/presign-upload")

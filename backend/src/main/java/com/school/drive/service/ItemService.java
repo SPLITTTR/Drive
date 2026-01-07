@@ -356,6 +356,46 @@ public void deleteItem(UUID userId, UUID itemId) {
         .collect(Collectors.toList());
   }
 
+  public List<ItemDto> searchScoped(UUID userId, String q, int limit, String scope, UUID folderId) {
+    if (q == null || q.isBlank()) return List.of();
+    int l = Math.min(Math.max(limit, 1), 50);
+    String query = q.trim();
+
+    String sc = (scope == null ? "MY_DRIVE" : scope).trim().toUpperCase();
+    boolean sharedScope = "SHARED".equals(sc);
+
+    List<Item> candidates;
+    if (folderId != null) {
+      // Search only within the current folder subtree (My Drive or Shared)
+      var access = perms.accessFor(userId, folderId);
+      if (!access.canRead()) throw new ForbiddenException("No access");
+      candidates = items.searchInSubtree(folderId, query, l * 3);
+    } else {
+      // Root search: either My Drive (owned) or Shared (items reachable from shared roots)
+      if (sharedScope) {
+        candidates = items.searchSharedVisible(userId, query, l * 3);
+      } else {
+        candidates = items.searchOwned(userId, query, l * 3);
+      }
+    }
+
+    return candidates.stream()
+        .filter(it -> {
+          var access2 = perms.accessFor(userId, it.id);
+          if (!access2.canRead()) return false;
+          // Enforce scope: MY_DRIVE = owned items only, SHARED = not owned
+          if (sharedScope) {
+            return it.ownerUserId == null || !it.ownerUserId.equals(userId);
+          } else {
+            return it.ownerUserId != null && it.ownerUserId.equals(userId);
+          }
+        })
+        .limit(l)
+        .map(ItemService::toDto)
+        .collect(Collectors.toList());
+  }
+
+
   public static class DownloadedFile {
     public final InputStream stream;
     public final String mimeType;
