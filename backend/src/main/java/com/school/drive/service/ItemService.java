@@ -13,7 +13,7 @@ import com.school.drive.repo.ItemShareRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.WebApplicationException;
+//import jakarta.ws.rs.WebApplicationException;
 import jakarta.persistence.EntityManager;
 
 import org.jboss.resteasy.reactive.multipart.FileUpload;
