@@ -801,14 +801,14 @@ function UploadPanel({
         position: 'fixed',
         right: 16,
         bottom: 16,
-        width: 'min(520px, calc(100vw - 32px))',
+        width: 'min(550px, calc(100vw - 32px))',
         background: 'white',
         borderRadius: 12,
         boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
         border: '1px solid rgba(0,0,0,0.08)',
         overflow: 'hidden',
         zIndex: 1200,
-        fontSize: 14,
+        fontSize: 22,
       }}
     >
       <div
@@ -862,7 +862,7 @@ function UploadPanel({
       </div>
 
       {!collapsed && (
-        <div style={{ maxHeight: 'min(560px, calc(100vh - 160px))', overflow: 'auto' }}>
+        <div style={{ maxHeight: 'min(400px, calc(100vh - 160px))', overflow: 'auto' }}>
           {active > 0 && (
             <div style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ opacity: 0.8 }}>Starting upload…</div>
